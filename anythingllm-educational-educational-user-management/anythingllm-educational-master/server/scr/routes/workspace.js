@@ -420,4 +420,182 @@ router.post('/validate', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * Get workspace member details with compliance checks
+ * @route GET /api/workspaces/:workspaceId/members/:userId/details
+ * @access Private (Authenticated users)
+ * @middleware authenticate
+ * @middleware requireWorkspaceAccess
+ */
+router.get('/:workspaceId/members/:userId/details', authenticate, requireWorkspaceAccess(), async (req, res) => {
+  try {
+    const { workspaceId, userId } = req.params;
+    
+    // Get member details through service with compliance checks
+    const memberDetails = await WorkspaceService.getMemberDetails(workspaceId, userId);
+    
+    if (!memberDetails) {
+      return res.status(404).json({
+        error: 'Member not found',
+        message: 'The requested member does not exist in this workspace'
+      });
+    }
+    
+    // Ensure no PII is exposed
+    const safeDetails = {
+      id: memberDetails.id,
+      userId: memberDetails.userId.replace(/^[a-zA-Z]+/, 'user_'), // Anonymize user ID
+      role: memberDetails.role,
+      joinedAt: memberDetails.joinedAt,
+      workspaceId: memberDetails.workspaceId,
+      lastActive: memberDetails.lastActive
+    };
+    
+    res.json({
+      success: true,
+      data: safeDetails
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch member details',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Update workspace member role
+ * @route PUT /api/workspaces/:workspaceId/members/:userId/role
+ * @access Private (Authenticated users)
+ * @middleware authenticate
+ * @middleware requireWorkspaceAccess
+ */
+router.put('/:workspaceId/members/:userId/role', authenticate, requireWorkspaceAccess(), async (req, res) => {
+  try {
+    const { workspaceId, userId } = req.params;
+    const { role } = req.body;
+    const updatedBy = req.user.id;
+    
+    // Validate input
+    if (!role) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Role is required'
+      });
+    }
+    
+    // Update member role through service
+    const result = await WorkspaceService.updateMemberRole(
+      workspaceId,
+      userId,
+      role,
+      updatedBy
+    );
+    
+    res.json({
+      success: true,
+      data: result,
+      message: 'Member role updated successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to update member role',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Bulk add members to workspace
+ * @route POST /api/workspaces/:workspaceId/members/bulk
+ * @access Private (Authenticated users)
+ * @middleware authenticate
+ * @middleware requireWorkspaceAccess
+ */
+router.post('/:workspaceId/members/bulk', authenticate, requireWorkspaceAccess(), async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const { members } = req.body;
+    const addedBy = req.user.id;
+    
+    // Validate input
+    if (!members || !Array.isArray(members)) {
+      return res.status(400).json({
+        error: 'Invalid input',
+        message: 'Members must be provided as an array'
+      });
+    }
+    
+    // Add members through service
+    const results = await WorkspaceService.addMultipleMembers(
+      workspaceId,
+      members,
+      addedBy
+    );
+    
+    res.json({
+      success: true,
+      data: results,
+      message: `${results.length} members added successfully`
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to add members',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get workspace member activity
+ * @route GET /api/workspaces/:workspaceId/members/:userId/activity
+ * @access Private (Authenticated users)
+ * @middleware authenticate
+ * @middleware requireWorkspaceAccess
+ */
+router.get('/:workspaceId/members/:userId/activity', authenticate, requireWorkspaceAccess(), async (req, res) => {
+  try {
+    const { workspaceId, userId } = req.params;
+    
+    // Get member activity through service
+    const activity = await WorkspaceService.getMemberActivity(workspaceId, userId);
+    
+    res.json({
+      success: true,
+      data: activity
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch member activity',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Export workspace members with compliance report
+ * @route GET /api/workspaces/:workspaceId/export/members
+ * @access Private (Admin or Super Admin only)
+ * @middleware authenticate
+ * @middleware requireRole(admin)
+ */
+router.get('/:workspaceId/export/members', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    
+    // Export members with compliance checks
+    const exportData = await WorkspaceService.exportWorkspaceMembers(workspaceId);
+    
+    res.json({
+      success: true,
+      data: exportData
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to export workspace members',
+      message: error.message
+    });
+  }
+});
+
 export default router;
